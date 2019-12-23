@@ -40,6 +40,8 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     self.transform = None
     self.path = None
 
+    self.model = CoreLogic()
+
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
 
@@ -59,15 +61,15 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     inputFiducialsNodeSelector.noneEnabled = False
     inputFiducialsNodeSelector.addEnabled = False
     inputFiducialsNodeSelector.removeEnabled = False
-    inputFiducialsNodeSelector.connect('currentNodeChanged(bool)', self.enableOrDisableCreateButton)
+    #inputFiducialsNodeSelector.connect('currentNodeChanged(bool)', self.enableOrDisableCreateButton)
     self.pathFormLayout.addRow("Input Fiducials:", inputFiducialsNodeSelector)
     self.parent.connect('mrmlSceneChanged(vtkMRMLScene*)',
                         inputFiducialsNodeSelector, 'setMRMLScene(vtkMRMLScene*)')
 
     # Initialize button - essentially building the path projection model
-    InitializeButton = qt.QPushButton("Initialize")
-    InitializeButton.toolTip = "Create the path."
-    InitializeButton.enabled = False
+    InitializeButton = qt.QPushButton("Update Curvature")
+    InitializeButton.toolTip = "Update the curve array if path has been modified."
+    InitializeButton.enabled = True
     self.pathFormLayout.addRow(InitializeButton)
     InitializeButton.connect('clicked()', self.onInitializeButtonClicked)
 
@@ -137,6 +139,10 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     self.selectedModelsList = []
     self.f = None #used to globally track position of slice
     #self.maskedVolumeNode = None
+    self.curvePoints = slicer.util.getNode("C").GetCurvePointsWorld()
+    self.frameSlider.maximum = self.curvePoints.GetNumberOfPoints()-2
+    
+    
 
     inputFiducialsNodeSelector.setMRMLScene(slicer.mrmlScene)
 
@@ -242,39 +248,19 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
   def enableOrDisableCreateButton(self):
     """Connected to both the fiducial and camera node selector. It allows to
     enable or disable the 'create path' button."""
-    self.InitializeButton.enabled = self.inputFiducialsNodeSelector.currentNode() is not None
+    #self.InitializeButton.enabled = self.inputFiducialsNodeSelector.currentNode() is not None
+    pass
 
   def onInitializeButtonClicked(self):
-    """Connected to 'create path' button. It allows to:
-      - compute the path
-      - create the associated model"""
-
-    fiducialsNode = self.inputFiducialsNodeSelector.currentNode()
-    #print "Calculating Path..."
-    result = EndoscopyComputePath(fiducialsNode)
-    #print "-> Computed path contains %d elements" % len(result.path)
-
-    #print "Create Model..."
-    self.model = EndoscopyPathModel(result.path, fiducialsNode)
-    #print "-> Model created"
-
-    # Update frame slider range
-    self.frameSlider.maximum = len(result.path) - 2
-
-    # Update flythrough variables
-    self.transform = self.model.transform
-    self.pathPlaneNormal = self.model.planeNormal
-    self.path = result.path
-
-    # Enable / Disable flythrough button
-    self.flythroughCollapsibleButton.enabled = len(result.path) > 0
+    self.curvePoints = slicer.util.getNode("C").GetCurvePointsWorld()
+    self.frameSlider.maximum = self.curvePoints.GetNumberOfPoints()-2
     
   def frameSliderValueChanged(self, newValue):
     ##print "frameSliderValueChanged:", newValue
     self.flyTo(newValue)
 
   def rotateViewValueChanged (self, newValue):
-    self.model.reslice_on_path(self.path[self.f], self.path[self.f+1], self.f, "Yellow", 50, newValue)
+    self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, newValue)
 
   def onPantomographButtonToggled(self):
     # clear volumes
@@ -386,243 +372,15 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     sliceNode.UpdateMatrices()
     sliceNode.Modified()
 
-  def flyToNext(self):
-    currentStep = self.frameSlider.value
-    nextStep = currentStep + self.skip + 1
-    if nextStep > len(self.path) - 2:
-      nextStep = 0
-    self.frameSlider.value = nextStep
-
   def flyTo(self, f):
     """ Apply the fth step in the path to the global camera"""
-    if self.path:
-      self.f = int(f)
-      p = self.path[self.f]
-      
-      self.model.reslice_on_path(self.path[self.f], self.path[self.f+1], self.f, "Transverse", 50)
-      self.model.reslice_on_path(self.path[self.f], self.path[self.f+1], self.f, "Yellow", 50, self.rotateView.value)
-      
+    self.f = int(f)
+    self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Transverse", 50)
+    self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, self.rotateView.value)
       
 
-
-class EndoscopyComputePath:
-  """Compute path given a list of fiducials.
-  A Hermite spline interpolation is used. See http://en.wikipedia.org/wiki/Cubic_Hermite_spline
-
-  Example:
-    result = EndoscopyComputePath(fiducialListNode)
-    #print "computer path has %d elements" % len(result.path)
-
-  """
-
-  def __init__(self, fiducialListNode, dl = 0.5):
-    import numpy
-    self.dl = dl # desired world space step size (in mm)
-    self.dt = dl # current guess of parametric stepsize
-    self.fids = fiducialListNode
-
-    # hermite interpolation functions
-    self.h00 = lambda t: 2*t**3 - 3*t**2     + 1
-    self.h10 = lambda t:   t**3 - 2*t**2 + t
-    self.h01 = lambda t:-2*t**3 + 3*t**2
-    self.h11 = lambda t:   t**3 -   t**2
-
-    # n is the number of control points in the piecewise curve
-
-    if self.fids.GetClassName() == "vtkMRMLAnnotationHierarchyNode":
-      # slicer4 style hierarchy nodes
-      collection = vtk.vtkCollection()
-      self.fids.GetChildrenDisplayableNodes(collection)
-      self.n = collection.GetNumberOfItems()
-      if self.n == 0:
-        return
-      self.p = numpy.zeros((self.n,3))
-      for i in range(self.n):
-        f = collection.GetItemAsObject(i)
-        coords = [0,0,0]
-        f.GetFiducialCoordinates(coords)
-        self.p[i] = coords
-    elif self.fids.GetClassName() == "vtkMRMLMarkupsFiducialNode":
-      # slicer4 Markups node
-      self.n = self.fids.GetNumberOfFiducials()
-      n = self.n
-      if n == 0:
-        return
-      # get fiducial positions
-      # sets self.p
-      self.p = numpy.zeros((n,3))
-      for i in range(n):
-        coord = [0.0, 0.0, 0.0]
-        self.fids.GetNthFiducialPosition(i, coord)
-        self.p[i] = coord
-    else:
-      # slicer3 style fiducial lists
-      self.n = self.fids.GetNumberOfFiducials()
-      n = self.n
-      if n == 0:
-        return
-      # get control point data
-      # sets self.p
-      self.p = numpy.zeros((n,3))
-      for i in range(n):
-        self.p[i] = self.fids.GetNthFiducialXYZ(i)
-
-    # calculate the tangent vectors
-    # - fm is forward difference
-    # - m is average of in and out vectors
-    # - first tangent is out vector, last is in vector
-    # - sets self.m
-    n = self.n
-    fm = numpy.zeros((n,3))
-    for i in range(0,n-1):
-      fm[i] = self.p[i+1] - self.p[i]
-    self.m = numpy.zeros((n,3))
-    for i in range(1,n-1):
-      self.m[i] = (fm[i-1] + fm[i]) / 2.
-    self.m[0] = fm[0]
-    self.m[n-1] = fm[n-2]
-
-    self.path = [self.p[0]]
-    self.calculatePath()
-
-  def calculatePath(self):
-    """ Generate a flight path for of steps of length dl """
-    #
-    # calculate the actual path
-    # - take steps of self.dl in world space
-    # -- if dl steps into next segment, take a step of size "remainder" in the new segment
-    # - put resulting points into self.path
-    #
-    n = self.n
-    segment = 0 # which first point of current segment
-    t = 0 # parametric current parametric increment
-    remainder = 0 # how much of dl isn't included in current step
-    while segment < n-1:
-      t, p, remainder = self.step(segment, t, self.dl)
-      if remainder != 0 or t == 1.:
-        segment += 1
-        t = 0
-        if segment < n-1:
-          t, p, remainder = self.step(segment, t, remainder)
-      self.path.append(p)
-
-  def point(self,segment,t):
-    return (self.h00(t)*self.p[segment] +
-              self.h10(t)*self.m[segment] +
-              self.h01(t)*self.p[segment+1] +
-              self.h11(t)*self.m[segment+1])
-
-  def step(self,segment,t,dl):
-    """ Take a step of dl and return the path point and new t
-      return:
-      t = new parametric coordinate after step
-      p = point after step
-      remainder = if step results in parametic coordinate > 1.0, then
-        this is the amount of world space not covered by step
-    """
-    import numpy.linalg
-    p0 = self.path[self.path.__len__() - 1] # last element in path
-    remainder = 0
-    ratio = 100
-    count = 0
-    while abs(1. - ratio) > 0.05:
-      t1 = t + self.dt
-      pguess = self.point(segment,t1)
-      dist = numpy.linalg.norm(pguess - p0)
-      ratio = self.dl / dist
-      self.dt *= ratio
-      if self.dt < 0.00000001:
-        return
-      count += 1
-      if count > 500:
-        return (t1, pguess, 0)
-    if t1 > 1.:
-      t1 = 1.
-      p1 = self.point(segment, t1)
-      remainder = numpy.linalg.norm(p1 - pguess)
-      pguess = p1
-    return (t1, pguess, remainder)
-
-
-class EndoscopyPathModel:
-  """Create a vtkPolyData for a polyline:
-       - Add one point per path point.
-       - Add a single polyline
-  """
-  def __init__(self, path, fiducialListNode):
-
-    fids = fiducialListNode
-    scene = slicer.mrmlScene
-
-    points = vtk.vtkPoints()
-    polyData = vtk.vtkPolyData()
-    polyData.SetPoints(points)
-
-    lines = vtk.vtkCellArray()
-    polyData.SetLines(lines)
-    linesIDArray = lines.GetData()
-    linesIDArray.Reset()
-    linesIDArray.InsertNextTuple1(0)
-
-    polygons = vtk.vtkCellArray()
-    polyData.SetPolys( polygons )
-    idArray = polygons.GetData()
-    idArray.Reset()
-    idArray.InsertNextTuple1(0)
-
-    for point in path:
-      pointIndex = points.InsertNextPoint(*point)
-      linesIDArray.InsertNextTuple1(pointIndex)
-      linesIDArray.SetTuple1( 0, linesIDArray.GetNumberOfTuples() - 1 )
-      lines.SetNumberOfCells(1)
-
-    import vtk.util.numpy_support as VN
-    pointsArray = VN.vtk_to_numpy(points.GetData())
-    self.planePosition, self.planeNormal = self.planeFit(pointsArray.T)
-
-    # Create model node
-    model = slicer.vtkMRMLModelNode()
-    model.SetScene(scene)
-    model.SetName(scene.GenerateUniqueName("Path-%s" % fids.GetName()))
-    model.SetAndObservePolyData(polyData)
-
-    # Create display node
-    modelDisplay = slicer.vtkMRMLModelDisplayNode()
-    modelDisplay.SetColor(1,1,0) # yellow
-    modelDisplay.SetScene(scene)
-    scene.AddNode(modelDisplay)
-    model.SetAndObserveDisplayNodeID(modelDisplay.GetID())
-
-    # Add to scene
-    scene.AddNode(model)
-
-    # Camera cursor
-    sphere = vtk.vtkSphereSource()
-    sphere.Update()
-
-    # Create model node
-    cursor = slicer.vtkMRMLModelNode()
-    cursor.SetScene(scene)
-    cursor.SetName(scene.GenerateUniqueName("Cursor-%s" % fids.GetName()))
-    cursor.SetPolyDataConnection(sphere.GetOutputPort())
-
-    # Create display node
-    cursorModelDisplay = slicer.vtkMRMLModelDisplayNode()
-    cursorModelDisplay.SetColor(1,0,0) # red
-    cursorModelDisplay.SetScene(scene)
-    scene.AddNode(cursorModelDisplay)
-    cursor.SetAndObserveDisplayNodeID(cursorModelDisplay.GetID())
-
-    # Add to scene
-    scene.AddNode(cursor)
-
-    # Create transform node
-    transform = slicer.vtkMRMLLinearTransformNode()
-    transform.SetName(scene.GenerateUniqueName("Transform-%s" % fids.GetName()))
-    scene.AddNode(transform)
-    cursor.SetAndObserveTransformNodeID(transform.GetID())
-
-    self.transform = transform
+class CoreLogic:
+  def __init__(self): pass
 
   # source: http://stackoverflow.com/questions/12299540/plane-fitting-to-4-or-more-xyz-points
   def planeFit(self, points):
@@ -645,7 +403,7 @@ class EndoscopyPathModel:
     return ctr, svd(M)[0][:,-1]
 
   # Inputting origin and normal point (+1 step from origin on model path), then fitting a poly-line, obtain derivative, build normal line from tangent, obtain coordinate = this yields 3 point coordinate for RasByNTP
-  def reslice_on_path(self, p0, pN, file_num, viewNode, aspectRatio = None, rotateZ = None):
+  def reslice_on_path(self, p0, pN, viewNode, aspectRatio = None, rotateZ = None):
     fx=np.poly1d(np.polyfit([p0[0],pN[0]],[p0[1],pN[1]], 1))
     fdx = np.polyder(fx)
     normal_line = lambda x: (-1/fdx(p0[0]))*(x-p0[0])+p0[1]
@@ -703,9 +461,13 @@ class EndoscopyPathModel:
     lines.InsertNextCell(sampledPoints.GetNumberOfPoints())
     for pointIndex in range(sampledPoints.GetNumberOfPoints()):
       lines.InsertCellPoint(pointIndex)
+
+    
     sampledCurvePoly = vtk.vtkPolyData()
     sampledCurvePoly.SetPoints(sampledPoints)
     sampledCurvePoly.SetLines(lines)
+
+    #print(sampledPoints.GetPoint(3))
 
     # Get physical coordinates from voxel coordinates
     volumeRasToIjkTransformMatrix = vtk.vtkMatrix4x4()
