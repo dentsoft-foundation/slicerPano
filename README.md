@@ -5,6 +5,6 @@ REQUIREMENTS: Slicer 4.11.0 2019-12-19 Nightly or greater, SegmentEditorExtraEff
 
 This project utilizes source code adapted from
 - Curve Planar Reformat extension: https://github.com/PerkLab/SlicerSandbox/blob/master/CurvedPlanarReformat/CurvedPlanarReformat.py
-- Endoscopy Module: https://github.com/Slicer/Slicer/blob/master/Modules/Scripted/Endoscopy/Endoscopy.py
 
 USE TUTORIAL: https://www.youtube.com/watch?v=osHV_v0W9dI
+- Using fiducial markers is not longer required, just create an open curve and start extension. Make sure to "Update Curvature" whenever changes to the curve are made.
