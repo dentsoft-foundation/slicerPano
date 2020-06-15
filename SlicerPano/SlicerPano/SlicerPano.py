@@ -42,6 +42,9 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
 
     self.model = CoreLogic()
 
+    self.curvePoints = None #slicer.util.getNode("C").GetCurvePointsWorld()
+    self.f = None #used to globally track position of slice
+
   def setup(self):
     ScriptedLoadableModuleWidget.setup(self)
 
@@ -53,22 +56,41 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     # Layout within the path collapsible button
     self.pathFormLayout = qt.QFormLayout(pathCollapsibleButton)
 
+    # Input volume node selector
+    inputVolumeNodeSelector = slicer.qMRMLNodeComboBox()
+    inputVolumeNodeSelector.objectName = 'inputVolumeNodeSelector'
+    inputVolumeNodeSelector.toolTip = "Select a fiducial list to define control points for the path."
+    inputVolumeNodeSelector.nodeTypes = ['vtkMRMLVolumeNode']
+    inputVolumeNodeSelector.noneEnabled = True
+    inputVolumeNodeSelector.addEnabled = False
+    inputVolumeNodeSelector.removeEnabled = False
+    #inputFiducialsNodeSelector.connect('currentNodeChanged(bool)', self.enableOrDisableCreateButton)
+    self.pathFormLayout.addRow("Input Volume:", inputVolumeNodeSelector)
+    self.parent.connect('mrmlSceneChanged(vtkMRMLScene*)',
+                        inputVolumeNodeSelector, 'setMRMLScene(vtkMRMLScene*)')
+
+    btn_select_volume = qt.QPushButton("Select Volume")
+    btn_select_volume.toolTip = "Select working volume."
+    btn_select_volume.enabled = True
+    self.pathFormLayout.addRow(btn_select_volume)
+    btn_select_volume.connect('clicked()', self.onbtn_select_volumeClicked)
+
     # Input fiducials node selector
     inputFiducialsNodeSelector = slicer.qMRMLNodeComboBox()
     inputFiducialsNodeSelector.objectName = 'inputFiducialsNodeSelector'
     inputFiducialsNodeSelector.toolTip = "Select a fiducial list to define control points for the path."
-    inputFiducialsNodeSelector.nodeTypes = ['vtkMRMLMarkupsFiducialNode', 'vtkMRMLAnnotationHierarchyNode', 'vtkMRMLFiducialListNode']
-    inputFiducialsNodeSelector.noneEnabled = False
-    inputFiducialsNodeSelector.addEnabled = False
-    inputFiducialsNodeSelector.removeEnabled = False
+    inputFiducialsNodeSelector.nodeTypes = ['vtkMRMLMarkupsCurveNode']
+    inputFiducialsNodeSelector.noneEnabled = True
+    inputFiducialsNodeSelector.addEnabled = True
+    inputFiducialsNodeSelector.removeEnabled = True
     #inputFiducialsNodeSelector.connect('currentNodeChanged(bool)', self.enableOrDisableCreateButton)
-    self.pathFormLayout.addRow("Input Fiducials:", inputFiducialsNodeSelector)
+    self.pathFormLayout.addRow("Input Curve:", inputFiducialsNodeSelector)
     self.parent.connect('mrmlSceneChanged(vtkMRMLScene*)',
                         inputFiducialsNodeSelector, 'setMRMLScene(vtkMRMLScene*)')
 
     # Initialize button - essentially building the path projection model
-    InitializeButton = qt.QPushButton("Update Curvature")
-    InitializeButton.toolTip = "Update the curve array if path has been modified."
+    InitializeButton = qt.QPushButton("Select/Update Curve")
+    InitializeButton.toolTip = "Select new or update existing curve."
     InitializeButton.enabled = True
     self.pathFormLayout.addRow(InitializeButton)
     InitializeButton.connect('clicked()', self.onInitializeButtonClicked)
@@ -96,6 +118,7 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     rotateView.maximum = 360
     flythroughFormLayout.addRow("Angle:", rotateView)
 
+    """
     #Models list
     addModelButton = qt.QPushButton("Add Model to Pantomograph")
     addModelButton.toolTip = "Build a list of models to add to the pantomographic reconstruction."
@@ -125,22 +148,24 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     flipVPanButton.toolTip = "Flips slice and composite pantomographs vertically."
     flythroughFormLayout.addRow(flipVPanButton)
     flipVPanButton.connect('clicked()', self.onflipVPanButtonToggled)
+    """
 
     # Add vertical spacer
     self.layout.addStretch(1)
 
     # Set local var as instance attribute
+    self.inputVolumeNodeSelector = inputVolumeNodeSelector
     self.inputFiducialsNodeSelector = inputFiducialsNodeSelector
     self.InitializeButton = InitializeButton
     self.flythroughCollapsibleButton = flythroughCollapsibleButton
     self.frameSlider = frameSlider
     self.rotateView = rotateView
-    self.PantomographButton = PantomographButton
-    self.selectedModelsList = []
-    self.f = None #used to globally track position of slice
+    #self.PantomographButton = PantomographButton
+    #self.selectedModelsList = []
+    
     #self.maskedVolumeNode = None
-    self.curvePoints = slicer.util.getNode("C").GetCurvePointsWorld()
-    self.frameSlider.maximum = self.curvePoints.GetNumberOfPoints()-2
+    
+    #self.frameSlider.maximum = self.curvePoints.GetNumberOfPoints()-2
     
     
 
@@ -200,7 +225,8 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     # Built-in layout IDs are all below 100, so you can choose any large random number
     # for your custom layout ID.
     customLayoutId=501
-    volumeNode = slicer.util.getNode('1*')
+    #volumeNode = slicer.util.getNode('1*')
+    """
     #Creating a dummy slice node for computing
     # Create slice node (this automatically creates a slice widget)
     sliceNodeCompute = slicer.mrmlScene.CreateNodeByClass('vtkMRMLSliceNode')
@@ -213,19 +239,20 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     # Select background volume
     sliceLogic = slicer.app.applicationLogic().GetSliceLogic(sliceNodeCompute)
     sliceLogic.GetSliceCompositeNode().SetBackgroundVolumeID(volumeNode.GetID())
-
+    """
     # Get the automatically created slice widget
     lm=slicer.app.layoutManager()
-    sliceWidget=lm.viewWidget(sliceNodeCompute)
-    controller = lm.sliceWidget("PanoCompute").sliceController()
-    controller.setSliceVisible(False)
-    sliceWidget.setParent(None)
+    #sliceWidget=lm.viewWidget(sliceNodeCompute)
+    #controller = lm.sliceWidget("PanoCompute").sliceController()
+    #controller.setSliceVisible(False)
+    #sliceWidget.setParent(None)
     # Show slice widget
     lm.layoutLogic().GetLayoutNode().AddLayoutDescription(customLayoutId, XML_layout)
     # Switch to the new custom layout 
     lm.setLayout(customLayoutId)
     #Re-load primary volume across all slice nodes
-    slicer.util.setSliceViewerLayers(background=volumeNode)
+    #slicer.util.setSliceViewerLayers(background=volumeNode)
+    
 
     #enables all slices' views in 3D view
     #layoutManager = slicer.app.layoutManager()
@@ -239,7 +266,7 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     yellowSliceNode = lm.sliceWidget("Yellow").sliceController()
     yellowSliceNode.setSliceVisible(True)
     
-    sliceNodeCompute.SetMappedInLayout(1)
+    #sliceNodeCompute.SetMappedInLayout(1)
 
 
     ########################################################################################
@@ -252,15 +279,28 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     pass
 
   def onInitializeButtonClicked(self):
-    self.curvePoints = slicer.util.getNode("C").GetCurvePointsWorld()
-    self.frameSlider.maximum = self.curvePoints.GetNumberOfPoints()-2
+    if self.inputFiducialsNodeSelector.currentNodeID is not None:
+      self.curvePoints = slicer.util.getNode(self.inputFiducialsNodeSelector.currentNodeID).GetCurvePointsWorld()
+      self.frameSlider.maximum = self.curvePoints.GetNumberOfPoints()-2
+    else:
+      slicer.util.confirmOkCancelDisplay("Open curve path not selected!", "slicerPano Info:")
+
+  def onbtn_select_volumeClicked(self):
+    if self.inputVolumeNodeSelector.currentNodeID is not None:
+      slicer.util.setSliceViewerLayers(background=self.inputVolumeNodeSelector.currentNodeID)
+    else:
+      slicer.util.confirmOkCancelDisplay("Volume not selected!", "slicerPano Info:")
     
   def frameSliderValueChanged(self, newValue):
     ##print "frameSliderValueChanged:", newValue
     self.flyTo(newValue)
 
   def rotateViewValueChanged (self, newValue):
-    self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, newValue)
+    if self.curvePoints is not None:
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, newValue)
+    else:
+      #slicer.util.confirmOkCancelDisplay("Open curve path not selected!", "slicerPano Info:")
+      pass
 
   def onPantomographButtonToggled(self):
     # clear volumes
@@ -374,9 +414,13 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
 
   def flyTo(self, f):
     """ Apply the fth step in the path to the global camera"""
-    self.f = int(f)
-    self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Transverse", 50)
-    self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, self.rotateView.value)
+    if self.curvePoints is not None:
+      self.f = int(f)
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Transverse", 50)
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, self.rotateView.value)
+    else:
+      #slicer.util.confirmOkCancelDisplay("Open curve path not selected!", "slicerPano Info:")
+      pass
       
 
 class CoreLogic:
