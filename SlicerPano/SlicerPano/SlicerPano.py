@@ -173,20 +173,16 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
 
     ########################################################################################
     XML_layout = """
-      <layout type="horizontal" split="true">
-      <item splitSize="250">
-          <layout type="horizontal" split="true">
-            <item>
-              <view class="vtkMRMLSliceNode" singletontag="Transverse">
+      <layout type="vertical" split="true">
+       <item splitSize="100">
+        <layout type="horizontal" split="true">
+        <item>
+            <view class="vtkMRMLSliceNode" singletontag="Transverse">
               <property name="orientation" action="default">Reformat</property>
               <property name="viewlabel" action="default">TR</property>
               <property name="viewcolor" action="default">#000000</property>
-              </view>
-            </item>
-          </layout>
-       </item>
-       <item splitSize="500">
-        <layout type="vertical" split="true">
+            </view>
+          </item>
          <item>
           <view class="vtkMRMLSliceNode" singletontag="Red">
            <property name="orientation" action="default">Axial</property>
@@ -194,20 +190,20 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
            <property name="viewcolor" action="default">#F34A33</property>
           </view>
          </item>
-         <item>
-          <view class="vtkMRMLViewNode" singletontag="1">
-           <property name="viewlabel" action="default">1</property>
-          </view>
-         </item>
-        </layout>
-       </item>
-       <item splitSize="500">
-        <layout type="vertical" split="true">
-         <item>
+          <item>
           <view class="vtkMRMLSliceNode" singletontag="Yellow">
            <property name="orientation" action="default">Sagittal</property>
            <property name="viewlabel" action="default">Y</property>
            <property name="viewcolor" action="default">#EDD54C</property>
+          </view>
+         </item>
+        </layout>
+       </item>
+       <item splitSize="100">
+        <layout type="horizontal" split="true">
+         <item>
+          <view class="vtkMRMLViewNode" singletontag="1">
+           <property name="viewlabel" action="default">1</property>
           </view>
          </item>
          <item>
