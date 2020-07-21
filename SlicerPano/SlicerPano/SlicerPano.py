@@ -98,7 +98,7 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
 
     # Flythrough collapsible button
     flythroughCollapsibleButton = ctk.ctkCollapsibleButton()
-    flythroughCollapsibleButton.text = "Options"
+    flythroughCollapsibleButton.text = "Slice Controls"
     flythroughCollapsibleButton.enabled = True #originally FALSE
     self.layout.addWidget(flythroughCollapsibleButton)
 
@@ -109,14 +109,37 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     frameSlider = ctk.ctkSliderWidget()
     frameSlider.connect('valueChanged(double)', self.frameSliderValueChanged)
     frameSlider.decimals = 0
-    flythroughFormLayout.addRow("Frame:", frameSlider)
+    flythroughFormLayout.addRow("Transverse:", frameSlider)
 
     # Slice rotate slider
     rotateView = ctk.ctkSliderWidget()
     rotateView.connect('valueChanged(double)', self.rotateViewValueChanged)
     rotateView.decimals = 0
     rotateView.maximum = 360
-    flythroughFormLayout.addRow("Angle:", rotateView)
+    flythroughFormLayout.addRow("Tangential:", rotateView)
+
+      # Flythrough collapsible button
+    flythroughCollapsibleButton = ctk.ctkCollapsibleButton()
+    flythroughCollapsibleButton.text = "Free View Controls"
+    flythroughCollapsibleButton.enabled = True #originally FALSE
+    self.layout.addWidget(flythroughCollapsibleButton)
+
+    # Layout within the Flythrough collapsible button
+    freeviewFormLayout = qt.QFormLayout(flythroughCollapsibleButton)
+    # Frame slider
+    fv_tan_slider = ctk.ctkSliderWidget()
+    fv_tan_slider.connect('valueChanged(double)', self.freeViewValueChanged)
+    fv_tan_slider.decimals = 0
+    fv_tan_slider.maximum = 360
+    freeviewFormLayout.addRow("Tangential Angle:", fv_tan_slider)
+
+    # Slice rotate slider
+    fv_ax_slider = ctk.ctkSliderWidget()
+    fv_ax_slider.connect('valueChanged(double)', self.freeViewValueChanged)
+    fv_ax_slider.decimals = 0
+    fv_ax_slider.maximum = 360
+    freeviewFormLayout.addRow("Axial Angle:", fv_ax_slider)
+
 
     """
     #Models list
@@ -160,6 +183,8 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     self.flythroughCollapsibleButton = flythroughCollapsibleButton
     self.frameSlider = frameSlider
     self.rotateView = rotateView
+    self.fv_tan_slider = fv_tan_slider
+    self.fv_ax_slider = fv_ax_slider
     #self.PantomographButton = PantomographButton
     #self.selectedModelsList = []
     
@@ -174,7 +199,7 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     ########################################################################################
     XML_layout = """
       <layout type="vertical" split="true">
-       <item splitSize="100">
+       <item splitSize="3">
         <layout type="horizontal" split="true">
         <item>
             <view class="vtkMRMLSliceNode" singletontag="Transverse">
@@ -199,7 +224,7 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
          </item>
         </layout>
        </item>
-       <item splitSize="100">
+       <item splitSize="2">
         <layout type="horizontal" split="true">
          <item>
           <view class="vtkMRMLViewNode" singletontag="1">
@@ -261,6 +286,7 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     transSliceNode.setSliceVisible(True)
     yellowSliceNode = lm.sliceWidget("Yellow").sliceController()
     yellowSliceNode.setSliceVisible(True)
+    lm.sliceWidget("Green").sliceController().setSliceVisible(True)
     
     #sliceNodeCompute.SetMappedInLayout(1)
 
@@ -291,9 +317,16 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     ##print "frameSliderValueChanged:", newValue
     self.flyTo(newValue)
 
-  def rotateViewValueChanged (self, newValue):
+  def rotateViewValueChanged(self, newValue):
     if self.curvePoints is not None:
       self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, newValue)
+    else:
+      #slicer.util.confirmOkCancelDisplay("Open curve path not selected!", "slicerPano Info:")
+      pass
+
+  def freeViewValueChanged(self, newValue):
+    if self.curvePoints is not None:
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Green", 50, self.fv_tan_slider.value, self.fv_ax_slider.value)
     else:
       #slicer.util.confirmOkCancelDisplay("Open curve path not selected!", "slicerPano Info:")
       pass
@@ -414,6 +447,7 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
       self.f = int(f)
       self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Transverse", 50)
       self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, self.rotateView.value)
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Green", 50, self.fv_tan_slider.value, self.fv_ax_slider.value)
     else:
       #slicer.util.confirmOkCancelDisplay("Open curve path not selected!", "slicerPano Info:")
       pass
@@ -443,7 +477,7 @@ class CoreLogic:
     return ctr, svd(M)[0][:,-1]
 
   # Inputting origin and normal point (+1 step from origin on model path), then fitting a poly-line, obtain derivative, build normal line from tangent, obtain coordinate = this yields 3 point coordinate for RasByNTP
-  def reslice_on_path(self, p0, pN, viewNode, aspectRatio = None, rotateZ = None):
+  def reslice_on_path(self, p0, pN, viewNode, aspectRatio = None, rotateZ = None, rotateT = None):
     fx=np.poly1d(np.polyfit([p0[0],pN[0]],[p0[1],pN[1]], 1))
     fdx = np.polyder(fx)
     normal_line = lambda x: (-1/fdx(p0[0]))*(x-p0[0])+p0[1]
@@ -478,6 +512,14 @@ class CoreLogic:
       transform.RotateY(rotateZ)
       sliceToRas.DeepCopy(transform.GetMatrix())
       sliceNode.UpdateMatrices()
+
+    if rotateT is not None:
+      transform = vtk.vtkTransform()
+      transform.SetMatrix(sliceToRas)
+      transform.RotateX(rotateT)
+      sliceToRas.DeepCopy(transform.GetMatrix())
+      sliceNode.UpdateMatrices()
+
     sliceNode.Modified()
 
     widget = slicer.app.layoutManager().sliceWidget(viewNode)
