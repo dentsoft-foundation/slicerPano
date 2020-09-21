@@ -319,14 +319,14 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
 
   def rotateViewValueChanged(self, newValue):
     if self.curvePoints is not None:
-      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, newValue)
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", None, newValue)
     else:
       #slicer.util.confirmOkCancelDisplay("Open curve path not selected!", "slicerPano Info:")
       pass
 
   def freeViewValueChanged(self, newValue):
     if self.curvePoints is not None:
-      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Green", 50, self.fv_tan_slider.value, self.fv_ax_slider.value)
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Green", None, self.fv_tan_slider.value, self.fv_ax_slider.value)
     else:
       #slicer.util.confirmOkCancelDisplay("Open curve path not selected!", "slicerPano Info:")
       pass
@@ -445,9 +445,9 @@ class SlicerPanoWidget(ScriptedLoadableModuleWidget):
     """ Apply the fth step in the path to the global camera"""
     if self.curvePoints is not None:
       self.f = int(f)
-      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Transverse", 50)
-      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", 50, self.rotateView.value)
-      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Green", 50, self.fv_tan_slider.value, self.fv_ax_slider.value)
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Transverse", None)
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Yellow", None, self.rotateView.value)
+      self.model.reslice_on_path(np.asarray(self.curvePoints.GetPoint(self.f)), np.asarray(self.curvePoints.GetPoint(self.f+1)), "Green", None, self.fv_tan_slider.value, self.fv_ax_slider.value)
     else:
       #slicer.util.confirmOkCancelDisplay("Open curve path not selected!", "slicerPano Info:")
       pass
